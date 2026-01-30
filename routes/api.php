@@ -46,12 +46,11 @@ Route::get('/verify/{code}', [App\Http\Controllers\Api\VerificationController::c
 */
 Route::middleware('auth:sanctum')->group(function () {
 
-    Route::get('/qr-batches/{id}/download-zip', [QrBatchController::class, 'downloadZip']);
 
 
     // Merchant Profile
-    Route::get('merchant/profile', [MerchantController::class, 'show']);
-    Route::put('merchant/profile', [MerchantController::class, 'update']);
+    Route::get('/merchant/profile', [App\Http\Controllers\Api\MerchantController::class, 'show']);
+    Route::post('/merchant/profile', [App\Http\Controllers\Api\MerchantController::class, 'update']);
 
     
     // Product Management
@@ -62,6 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('qr-batches', [QrBatchController::class, 'store']);
     Route::get('qr-batches/{id}', [QrBatchController::class, 'show']); // Pakai {id} agar konsisten dengan controller
     Route::post('qr-batches/{id}/generate', [QrBatchController::class, 'generate']);
+    Route::get('/qr-batches/{id}/download-zip', [App\Http\Controllers\Api\QrBatchController::class, 'downloadZip']);
 
     // QR Code List (Melihat detail tiap QR hasil generate)
     Route::get('qr-codes', [QrCodeController::class, 'index']);

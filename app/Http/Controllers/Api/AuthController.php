@@ -29,71 +29,55 @@ class AuthController extends Controller
         }
 
         $user = Auth::user();
-
         $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([
             'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'role' => $user->role,
-            ]
+            // FIX: Gunakan load('merchant') agar data plan_type terbawa ke frontend
+            'user' => $user->load('merchant'), 
         ]);
     }
     public function register(Request $request)
     {
-        // 1. Validasi Input
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed', // butuh field password_confirmation
-            'company_name' => 'required|string|max:255|unique:merchants,company_name',
+            'name' => 'required|string',
+            'email' => 'required|email|unique:users',
+            'password' => 'required|confirmed|min:8',
+            'company_name' => 'required|string|unique:merchants',
+            'plan' => 'required|in:basic,pro,enterprise', 
         ]);
 
-        // 2. Gunakan Transaction (User & Merchant harus sukses dua-duanya)
+        // Hasil return dari dalam transaction akan masuk ke variabel $result
         $result = DB::transaction(function () use ($validated) {
-            
-            // A. Buat User
             $user = User::create([
                 'name' => $validated['name'],
                 'email' => $validated['email'],
                 'password' => Hash::make($validated['password']),
-                'role' => 'merchant', // Default role register adalah merchant
+                'role' => 'merchant',
             ]);
 
-            // B. Buat Merchant Profile
-            // Slug otomatis dari nama perusahaan (contoh: "Kopi Mantap" -> "kopi-mantap")
-            $slug = Str::slug($validated['company_name']); 
+            $slug = Str::slug($validated['company_name']);
             
-            // Cek jika slug kembar (opsional, tapi bagus untuk safety)
-            $count = Merchant::where('slug', 'LIKE', "{$slug}%")->count();
-            if ($count > 0) {
-                $slug .= '-' . ($count + 1);
-            }
-
             Merchant::create([
                 'user_id' => $user->id,
                 'company_name' => $validated['company_name'],
                 'slug' => $slug,
-                'qr_quota' => 100, // Bonus kuota awal (opsional)
+                'plan_type' => $validated['plan'],
                 'is_verified' => false,
+                'subscription_expires_at' => now()->addMonth(), 
             ]);
 
-            // C. Buat Token (Auto Login)
             $token = $user->createToken('auth_token')->plainTextToken;
-
-            return [
-                'user' => $user,
-                'token' => $token
-            ];
+            
+            // Kembalikan array agar bisa ditangkap oleh $result di luar
+            return ['user' => $user, 'token' => $token];
         });
 
+        // FIX: Ambil data dari $result, bukan variabel $token/$user langsung
         return response()->json([
-            'message' => 'Registrasi berhasil',
-            'user' => $result['user'],
-            'token' => $result['token']
-        ], 201);
+            'token' => $result['token'],
+            'user' => $result['user']->load('merchant'), 
+        ]);
     }
         public function logout(Request $request)
     {

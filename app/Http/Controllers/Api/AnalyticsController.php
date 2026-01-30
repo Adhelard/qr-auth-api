@@ -14,38 +14,61 @@ class AnalyticsController extends Controller
     // GET /api/analytics/summary
     public function summary(Request $request)
     {
-        $merchantId = $request->user()->merchant->id;
+        $merchant = auth()->user()->merchant;
+        
+        // AMBIL LIMIT BERDASARKAN PAKET (Fix Disini)
+        $limits = $merchant->getLimits(); // Mengambil array dari Model Merchant
 
-        // 1. Total Produk
-        $totalProducts = Product::where('merchant_id', $merchantId)->count();
+        $productIds = $merchant->products()->pluck('id');
+        $batchIds = $merchant->qrBatches()->pluck('id');
 
-        // 2. Total Scan (Sum scan_count dari semua QR milik merchant)
-        $totalScans = QrCode::whereHas('qrBatch', function ($q) use ($merchantId) {
-            $q->where('merchant_id', $merchantId);
-        })->sum('scan_count');
+        // 1. Hitung Total Scans
+        $totalScans = QrCode::whereIn('qr_batch_id', $batchIds)->sum('scan_count');
 
-        // 3. Log Scan Terakhir (5 Data)
-        // Kita butuh join karena ScanLog biasanya tidak langsung punya merchant_id
-        $recentScans = ScanLog::whereHas('qrCode.qrBatch', function ($q) use ($merchantId) {
-            $q->where('merchant_id', $merchantId);
-        })
-        ->with(['qrCode.qrBatch.product']) // Load relasi untuk nama produk
-        ->latest('scanned_at')
-        ->take(5)
-        ->get()
-        ->map(function ($log) {
-            return [
-                'product_name' => $log->qrCode->qrBatch->product->name ?? 'Unknown',
-                'unique_code' => $log->qrCode->unique_code,
-                'location' => $log->city ?? 'Unknown',
-                'scanned_at' => $log->scanned_at,
-            ];
-        });
+        // 2. Hitung Suspicious
+        $suspiciousScans = QrCode::whereIn('qr_batch_id', $batchIds)
+                            ->where('scan_count', '>', 5)
+                            ->sum('scan_count');
+
+        // 3. Hitung Kuota Terpakai
+        $quotaUsed = QrCode::whereIn('qr_batch_id', $batchIds)->count();
+        
+        // 4. Recent Scans logic (tetap sama)
+        $recentScans = ScanLog::whereHas('qrCode', function ($q) use ($batchIds) {
+                            $q->whereIn('qr_batch_id', $batchIds);
+                        })
+                        ->with(['qrCode.qrBatch.product'])
+                        ->latest('scanned_at')
+                        ->take(5)
+                        ->get()
+                        ->map(function ($log) {
+                            return [
+                                'product' => $log->qrCode->qrBatch->product->name,
+                                'location' => $log->city == 'Unknown' ? $log->ip_address : $log->city,
+                                'time' => $log->scanned_at->diffForHumans(),
+                                'status' => $log->qrCode->scan_count > 5 ? 'suspicious' : 'valid'
+                            ];
+                        });
+
+        // 5. DATA CHART (Agar grafik tidak random terus di frontend)
+        // Kita buat data dummy statistik 7 hari terakhir (atau query real jika mau)
+        $chartData = [0, 0, 0, 0, 0, 0, 0]; // Nanti bisa diganti query group by date
 
         return response()->json([
-            'total_products' => $totalProducts,
-            'total_scans' => $totalScans,
-            'recent_scans' => $recentScans
+            'total_products' => $merchant->products()->count(),
+            'total_batches' => $merchant->qrBatches()->count(),
+            'total_scans' => (int) $totalScans,
+            'suspicious_scans' => (int) $suspiciousScans,
+            'quota_used' => $quotaUsed,
+            
+            // FIX: Ambil limit dari Plan, bukan kolom qr_quota
+            'quota_limit' => $limits['monthly_quota'], 
+            
+            // FIX: Kirim plan_type agar label di dashboard benar
+            'plan_type' => $merchant->plan_type, 
+
+            'recent_scans' => $recentScans,
+            'chart_data' => $chartData
         ]);
     }
 

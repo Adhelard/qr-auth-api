@@ -20,6 +20,7 @@ class QrCode extends Model
     ];
 
     protected $casts = [
+        'metadata' => 'array',
         'first_scanned_at' => 'datetime',
         'last_scanned_at' => 'datetime',
     ];
