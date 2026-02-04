@@ -8,13 +8,12 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class MerchantController extends Controller
-{
-    // GET: Ambil Data Profil
+{ 
     public function show()
     {
         $user = auth()->user();
         $merchant = $user->merchant;
-        $limits = $merchant->getLimits(); // Ambil limit plan
+        $limits = $merchant->getlimits(); // Ambil limit plan
 
         return response()->json([
             'name' => $user->name,
